@@ -184,12 +184,3 @@ Sign, planet and arcana names, as well as the built-in knowledge base, are in Ru
 ## Contributing
 
 Issues and pull requests are welcome. If you report a calculation error, please include the input data and the reference values you compared against.
-
-## Credits
-
-- Planetary elements: E. M. Standish, *Keplerian Elements for Approximate Positions of the Major Planets* (JPL)
-- Lunar series and general algorithms: Jean Meeus, *Astronomical Algorithms*
-
-## License
-
-MIT. Add a `LICENSE` file before publishing.
