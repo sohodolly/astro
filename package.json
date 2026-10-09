@@ -1,1 +1,13 @@
-{"name":"astro-local","type":"module","scripts":{"start":"node server.js"},"engines":{"node":">=18"}}
+{
+  "name": "astro-local",
+  "version": "2.0.0",
+  "type": "module",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test",
+    "web:dev": "npm --prefix frontend run dev",
+    "web:build": "npm --prefix frontend run build"
+  }
+}

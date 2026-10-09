@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Astro Local</title>
+<style>
+:root{--bg:#0f1020;--fg:#e8e6f5;--card:#191a33;--ac:#c9a0ff;--mut:#8b89a8}
+@media(prefers-color-scheme:light){:root{--bg:#f6f4fb;--fg:#201d33;--card:#fff;--ac:#6b3fc0;--mut:#6d6a85}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px system-ui,sans-serif;padding:20px;max-width:980px;margin:auto}
+h1{font-weight:500;color:var(--ac)}.card{background:var(--card);border-radius:12px;padding:16px;margin:14px 0}
+form{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+input,select,button{padding:9px;border-radius:8px;border:1px solid var(--mut);background:var(--bg);color:var(--fg);font:inherit}
+button{background:var(--ac);color:#fff;border:0;cursor:pointer}table{width:100%;border-collapse:collapse}
+td,th{padding:5px 8px;text-align:left;border-bottom:1px solid #8883}.mut{color:var(--mut)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:720px){.grid{grid-template-columns:1fr}}
+svg text{fill:var(--fg)}
+</style></head><body>
+<h1>✦ Astro Local</h1>
+<div class="card"><form id="f">
+<input type="date" id="date" value="1990-05-15" required><input type="time" id="time" value="14:30">
+<select id="city"></select><select id="hs"><option value="whole">Целые знаки</option><option value="equal">Равные дома</option></select>
+<button>Рассчитать</button></form></div>
+<div id="out"></div>
+<div class="card"><b>RAG-поиск по базе знаний</b>
+<form id="q" style="grid-template-columns:1fr auto"><input id="qt" placeholder="напр.: Луна в Раке"><button>Найти</button></form><div id="rr"></div></div>
+<script>
+const $=id=>document.getElementById(id),G=["♈","♉","♊","♋","♌","♍","♎","♏","♐","♑","♒","♓"];
+fetch('/api/cities').then(r=>r.json()).then(c=>$('city').innerHTML=Object.keys(c).map(k=>`<option>${k}</option>`).join(''));
+function wheel(c){const R=170,pt=(l,r)=>{const a=(180-(l-c.asc.lon))*Math.PI/180;return[200+r*Math.cos(a),200-r*Math.sin(a)]};
+let s=`<svg viewBox="0 0 400 400"><circle cx="200" cy="200" r="${R}" fill="none" stroke="#8886"/><circle cx="200" cy="200" r="120" fill="none" stroke="#8886"/>`;
+for(let i=0;i<12;i++){const[a,b]=pt(i*30,R),[x,y]=pt(i*30,120),[tx,ty]=pt(i*30+15,145);s+=`<line x1="${x}" y1="${y}" x2="${a}" y2="${b}" stroke="#8886"/><text x="${tx}" y="${ty}" text-anchor="middle" dominant-baseline="middle" font-size="16">${G[i]}</text>`}
+c.cusps.forEach((l,i)=>{const[x,y]=pt(l,120),[tx,ty]=pt(l+15,100);s+=`<line x1="200" y1="200" x2="${x}" y2="${y}" stroke="#8883"/><text x="${tx}" y="${ty}" font-size="10" text-anchor="middle" class="mut">${i+1}</text>`});
+for(const[n,p]of Object.entries(c.planets)){if(n=='Юж. узел')continue;const[x,y]=pt(p.lon,100);s+=`<circle cx="${x}" cy="${y}" r="3" fill="var(--ac)"/><text x="${x+4}" y="${y-4}" font-size="9">${n.slice(0,3)}</text>`}
+return s+'</svg>'}
+$('f').onsubmit=async e=>{e.preventDefault();
+const r=await fetch('/api/chart',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:$('date').value,time:$('time').value,city:$('city').value,house_system:$('hs').value})});
+const c=await r.json();if(!r.ok){$('out').innerHTML=`<div class="card">${c.detail}</div>`;return}
+const A=c.arcana,an=k=>`${A[k].n} ${A[k].name}`;
+$('out').innerHTML=`<div class="grid"><div class="card">${wheel(c)}<div class="mut">UTC ${c.utc} · ${c.tz}</div></div>
+<div class="card"><table><tr><th>Тело</th><th>Позиция</th><th>Дом</th></tr>
+<tr><td>ASC</td><td>${c.asc.text}</td><td></td></tr><tr><td>MC</td><td>${c.mc.text}</td><td></td></tr>
+${Object.entries(c.planets).map(([n,p])=>`<tr><td>${n}${p.retro?' ℞':''}</td><td>${p.text}</td><td>${p.house}</td></tr>`).join('')}</table></div></div>
+<div class="grid"><div class="card"><b>Арканы</b><br>День: ${an('day')}<br>Месяц: ${an('month')}<br>Год: ${an('year')}<br>Предназначение: ${an('destiny')}<br>Центр: ${an('center')}</div>
+<div class="card"><b>Аспекты</b><table>${c.aspects.map(a=>`<tr><td>${a.a}</td><td>${a.aspect}</td><td>${a.b}</td><td class="mut">${a.orb}°</td></tr>`).join('')}</table></div></div>
+<div class="card"><b>Интерпретации (RAG)</b>${Object.entries(c.interpretations).map(([p,l])=>`<p><b>${p}</b><br>${l.map(x=>x.text).join('<br>')}</p>`).join('')}</div>`};
+$('q').onsubmit=async e=>{e.preventDefault();const r=await(await fetch('/api/rag?q='+encodeURIComponent($('qt').value))).json();
+$('rr').innerHTML=r.map(x=>`<p><b>${x.title}</b> <span class="mut">${x.score}</span><br>${x.text}</p>`).join('')||'ничего не найдено'};
+</script></body></html>

@@ -16,7 +16,7 @@ No Swiss Ephemeris, no backend npm packages. Just Node 18+.
 ### Local (Node)
 
 ```bash
-git clone https://github.com/<your-user>/astro-local.git
+git clone https://github.com/sohodolly/astro-local.git
 cd astro-local
 node server.js                # backend + legacy page at http://127.0.0.1:8000
 ```
@@ -257,3 +257,11 @@ npm test        # node:test: core math, DST conversion, auth flow, limits, mock 
 
 Issues and pull requests are welcome. If you report a calculation error, please include the input data and the reference values you compared against.
 
+## Credits
+
+- Planetary elements: E. M. Standish, *Keplerian Elements for Approximate Positions of the Major Planets* (JPL)
+- Lunar series and general algorithms: Jean Meeus, *Astronomical Algorithms*
+
+## License
+
+MIT. Add a `LICENSE` file before publishing.
