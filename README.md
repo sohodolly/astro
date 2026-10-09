@@ -1,8 +1,8 @@
 # Astro Local
 
-A local astrology web app with a **from-scratch calculation core** and a **zero-dependency Node.js backend**.
+A local astrology web app with a **from-scratch calculation core**, a **zero-dependency Node.js MVC backend** (JWT auth, routing, Stripe payments), and a **Vue 3 + Vue Router** frontend. Docker-ready.
 
-No Swiss Ephemeris, no npm packages, no external services. Just Node 18+.
+No Swiss Ephemeris, no backend npm packages. Just Node 18+.
 
 - Ephemerides computed from orbital-element tables (planets) and Meeus series (Moon)
 - Natal charts: planet positions, retrogrades, Ascendant, MC, houses, aspects
@@ -13,30 +13,74 @@ No Swiss Ephemeris, no npm packages, no external services. Just Node 18+.
 
 ## Quick start
 
+### Local (Node)
+
 ```bash
 git clone https://github.com/<your-user>/astro-local.git
 cd astro-local
-node server.js
+node server.js                # backend + legacy page at http://127.0.0.1:8000
 ```
 
-Open http://127.0.0.1:8000. Set `PORT` to change the port:
+### With the Vue frontend
 
 ```bash
-PORT=3000 node server.js
+cd frontend && npm install && cd ..
+npm run web:build             # builds the SPA into public/app, served by the backend
+node server.js                # open http://127.0.0.1:8000
+# or, for hot reload: terminal 1 `npm run dev`, terminal 2 `npm run web:dev` (proxies /api to :8000)
 ```
 
-Requirements: **Node.js 18 or newer** (needs ES modules and full ICU, which is the default in official builds).
+### Docker
 
-## Project structure
+```bash
+cp .env.example .env          # set JWT_SECRET at minimum
+docker compose up --build     # http://localhost:8000, data persisted in the `astro-data` volume
+```
+
+The backend needs **Node.js 18+** and has **zero npm dependencies**. Only the frontend uses npm (Vue 3, Vue Router, Vite).
+
+## Architecture (MVC)
 
 ```
 astro-local/
-├── astro.js        # calculation core (time, ephemerides, houses, aspects, arcana)
-├── server.js       # HTTP server, API routes, BM25 RAG
-├── index.html      # frontend (vanilla JS, SVG chart wheel)
-├── kb/             # optional: your own *.md knowledge files for RAG
-└── package.json
+├── server.js                 # entry point
+├── src/
+│   ├── app.js                # HTTP server + static/SPA serving
+│   ├── router.js             # router: params, middleware chains, error handling
+│   ├── routes.js             # route table (single place to see the whole API)
+│   ├── middleware.js         # requireAuth
+│   ├── config.js, db.js      # env config, JSON-file collections
+│   ├── controllers/          # auth, chart, payment: request handling and business rules
+│   ├── models/               # User, Chart, Payment: data access
+│   ├── views/presenters.js   # JSON serializers, so internals like password hashes never leak
+│   ├── services/             # rag.js (BM25), stripe.js (Stripe over fetch)
+│   ├── lib/auth.js           # scrypt password hashing, HS256 JWT
+│   └── core/astro.js         # the calculation core (no I/O)
+├── frontend/                 # Vue 3 + Vue Router + Vite SPA
+├── public/legacy.html        # the original v1 single page, still served at /legacy
+├── kb/                       # your own *.md knowledge files for RAG
+├── test/                     # node:test suite
+├── Dockerfile, docker-compose.yml, .env.example
 ```
+
+Request flow: `router` → middleware (`requireAuth`) → controller → model/service → presenter → JSON.
+
+## Authentication
+
+- Passwords are hashed with **scrypt** (per-user random salt).
+- Sessions are **JWT (HS256)** signed with `JWT_SECRET`, valid 7 days, sent as `Authorization: Bearer <token>`.
+- Set a strong `JWT_SECRET`. In `NODE_ENV=production` the server refuses to start with the default.
+
+## Payments
+
+Free users can save up to 3 charts. Premium removes the limit (`402` is returned when the limit is hit).
+
+- **Stripe Checkout** is called directly over `fetch` (no SDK). Set `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID` and `STRIPE_WEBHOOK_SECRET`.
+- Point a Stripe webhook for `checkout.session.completed` at `POST /api/payments/webhook`. The signature is verified with HMAC-SHA256 and a 5-minute tolerance, and handling is idempotent.
+- Without `STRIPE_SECRET_KEY` the app runs in **mock mode**: checkout redirects to your own `/account` page and `POST /api/payments/mock-complete` upgrades the user. Use it for local development and tests only. It is disabled once Stripe is configured.
+- Local webhook testing: `stripe listen --forward-to localhost:8000/api/payments/webhook`.
+
+Adding another provider (LiqPay, WayForPay, etc.) means a new file in `services/` with a "create checkout" function and a webhook verifier, plus a branch in `controllers/payment.js`.
 
 ## API
 
@@ -101,6 +145,21 @@ Search the knowledge base with BM25. `k` is the number of results (default 5).
 ```bash
 curl -G http://127.0.0.1:8000/api/rag --data-urlencode "q=Луна в Раке" --data-urlencode "k=3"
 ```
+
+### Auth, saved charts and payments
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/api/auth/register` | no | `{email, password}` returns `{token, user}` (201) |
+| POST | `/api/auth/login` | no | `{email, password}` returns `{token, user}` |
+| GET | `/api/auth/me` | yes | Current user |
+| GET | `/api/charts` | yes | Saved charts |
+| POST | `/api/charts` | yes | Save a chart: same body as `/api/chart` plus `name`. Free plan: max 3 (`402` after) |
+| DELETE | `/api/charts/:id` | yes | Delete a saved chart (204) |
+| POST | `/api/payments/checkout` | yes | Returns `{provider, url}` to redirect the user to |
+| POST | `/api/payments/mock-complete` | yes | Dev only, when Stripe is not configured |
+| POST | `/api/payments/webhook` | Stripe signature | Stripe webhook |
+| GET | `/api/health` | no | Health check (used by Docker) |
 
 ### `GET /api/cities`
 
@@ -172,15 +231,29 @@ Expect planet positions within a few arcminutes and the Moon within roughly 0.1�
 
 Sign, planet and arcana names, as well as the built-in knowledge base, are in Russian. To localize, edit these in `astro.js` and `server.js`: `SIGNS`, `ELEMENTS` keys, `ARCANA`, `ASPECTS`, `PLANET_KEY`, `SIGN_KEY`, `HOUSE_KEY`, `ARC_KEY`. The stemmer in `server.js` (`tok`) is tuned for Russian and should be replaced for other languages.
 
+## Testing and maintenance
+
+```bash
+npm test        # node:test: core math, DST conversion, auth flow, limits, mock payment
+```
+
+- **Backward compatibility:** the v1 endpoints (`/api/chart`, `/api/arcana`, `/api/rag`, `/api/cities`) and their response shapes are unchanged and stay public. The old UI remains at `/legacy`. A test guards this.
+- **Data:** stored as JSON files in `DATA_DIR` (`./data`, or `/data` in Docker). Back up that directory. The `Collection` class in `src/db.js` is the only place that touches storage, so moving to SQLite or Postgres means reimplementing it.
+- **Core changes:** `src/core/astro.js` has no I/O. Add a test with reference values before changing any calculation.
+- **Upgrading from v1:** move `astro.js` to `src/core/` and `index.html` to `public/legacy.html`. Nothing else is required, and the API is a superset.
+- **Production checklist:** set `JWT_SECRET`, serve behind HTTPS (a reverse proxy such as Caddy or nginx), restrict CORS (currently `*`), and add rate limiting on `/api/auth/*`.
+
 ## Roadmap
 
 - Placidus and Koch houses
 - Transits, progressions and synastry
 - True node, Chiron, Lilith
 - Optional LLM layer on top of the RAG retrieval
+- SQL storage, rate limiting, password reset by email
 - Geocoding for arbitrary cities
 - Unit tests against reference ephemeris data
 
 ## Contributing
 
 Issues and pull requests are welcome. If you report a calculation error, please include the input data and the reference values you compared against.
+
